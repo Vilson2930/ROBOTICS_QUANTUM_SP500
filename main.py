@@ -105,8 +105,6 @@ from reports.report_generator import (
 # ============================================================
 
 SAVE_INTERMEDIATE_FILES = True
-SAVE_FINAL_REPORT = True
-DISPLAY_FINAL_REPORT = True
 
 
 # ============================================================
@@ -152,9 +150,11 @@ def print_stage(
 
     print()
     print("=" * 120)
+
     print(
         f"ETAPA {number} — {title}"
     )
+
     print("=" * 120)
 
 
@@ -424,6 +424,7 @@ def run() -> dict:
 
     print()
     print("ROBOTICS — TOP 5")
+
     print(
         robotics_selection[
             [
@@ -442,6 +443,7 @@ def run() -> dict:
 
     print()
     print("QUANTUM — TOP 2")
+
     print(
         quantum_selection[
             [
@@ -677,7 +679,8 @@ def run() -> dict:
 
     unexpected = (
         signal_robotics
-        - selected_robotics
+        -
+        selected_robotics
     )
 
     if unexpected:
@@ -735,21 +738,22 @@ def run() -> dict:
         ReportGenerator()
     )
 
+    # --------------------------------------------------------
+    # CORREÇÃO:
+    #
+    # ReportGenerator.generate() recebe somente portfolio.
+    # Os relatórios são salvos pelo próprio ReportGenerator.
+    # --------------------------------------------------------
+
     report = (
         report_engine.generate(
             portfolio=
                 portfolio,
-
-            save=
-                SAVE_FINAL_REPORT,
-
-            display=
-                DISPLAY_FINAL_REPORT,
         )
     )
 
     # ========================================================
-    # AUDITORIA FINAL
+    # 14 — AUDITORIA FINAL
     # ========================================================
 
     print_stage(
@@ -880,9 +884,11 @@ def run() -> dict:
 
     print()
     print("=" * 120)
+
     print(
         "EXECUÇÃO CONCLUÍDA COM SUCESSO"
     )
+
     print("=" * 120)
 
     return {
@@ -940,9 +946,11 @@ def main() -> int:
 
         print()
         print("=" * 120)
+
         print(
             "ERRO NA EXECUÇÃO DO ROBÔ"
         )
+
         print("=" * 120)
 
         print(
