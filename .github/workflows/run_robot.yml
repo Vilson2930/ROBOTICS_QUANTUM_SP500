@@ -1,0 +1,156 @@
+name: Run Robotics Quantum SP500
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # Segunda a sexta-feira às 11:00 UTC
+    # Aproximadamente 08:00 no horário de Brasília.
+    - cron: "0 11 * * 1-5"
+
+permissions:
+  contents: read
+
+jobs:
+  run-robot:
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 45
+
+    steps:
+
+      # ============================================================
+      # 1. REPOSITÓRIO
+      # ============================================================
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ============================================================
+      # 2. PYTHON
+      # ============================================================
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ============================================================
+      # 3. DEPENDÊNCIAS
+      # ============================================================
+
+      - name: Upgrade pip
+        run: |
+          python -m pip install --upgrade pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      # ============================================================
+      # 4. VALIDAR ESTRUTURA
+      # ============================================================
+
+      - name: Validate project structure
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          required = [
+              "main.py",
+              "requirements.txt",
+
+              "config/settings.py",
+              "config/thematic_universe.py",
+              "config/fundamental_policy.py",
+
+              "data/sp500_universe.py",
+              "data/fundamental_data.py",
+              "data/market_data.py",
+
+              "engine/thematic_classifier.py",
+              "engine/fundamental_selection.py",
+              "engine/technical_indicators.py",
+              "engine/institutional_score.py",
+              "engine/technical_score.py",
+              "engine/entry_timing_engine.py",
+              "engine/signal_engine.py",
+              "engine/portfolio_engine.py",
+
+              "reports/report_generator.py",
+          ]
+
+          missing = [
+              path
+              for path in required
+              if not Path(path).exists()
+          ]
+
+          if missing:
+              raise SystemExit(
+                  "Arquivos ausentes:\n"
+                  + "\n".join(missing)
+              )
+
+          print("Estrutura principal: OK")
+          PY
+
+      # ============================================================
+      # 5. VALIDAR SINTAXE PYTHON
+      # ============================================================
+
+      - name: Validate Python syntax
+        run: |
+          python -m compileall \
+            main.py \
+            config \
+            data \
+            engine \
+            reports
+
+      # ============================================================
+      # 6. EXECUTAR ROBÔ
+      # ============================================================
+
+      - name: Run Robotics Quantum SP500
+        env:
+          PYTHONUNBUFFERED: "1"
+
+          # Identificação exigida pela SEC.
+          # Pode ser substituída futuramente por GitHub Secret.
+          SEC_USER_AGENT: "ROBOTICS_QUANTUM_SP500 research contact"
+        run: |
+          python main.py
+
+      # ============================================================
+      # 7. MOSTRAR ARQUIVOS GERADOS
+      # ============================================================
+
+      - name: Show generated files
+        if: always()
+        run: |
+          echo "=============================="
+          echo "ARQUIVOS GERADOS"
+          echo "=============================="
+
+          find . \
+            -maxdepth 3 \
+            -type f \
+            | sort
+
+      # ============================================================
+      # 8. SALVAR RESULTADOS DA EXECUÇÃO
+      # ============================================================
+
+      - name: Upload robot outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: robotics-quantum-sp500-results
+          path: |
+            outputs/
+            reports/
+            data/*.csv
+          if-no-files-found: warn
+          retention-days: 30
