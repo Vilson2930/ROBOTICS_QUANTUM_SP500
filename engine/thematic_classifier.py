@@ -6,8 +6,8 @@ Classificador temático operacional.
 
 RESPONSABILIDADE
 ----------------
-Receber o universo temático que já passou pelo filtro do S&P 500
-e produzir os universos independentes:
+Receber o universo atual do S&P 500 e produzir o universo
+temático elegível para os motores:
 
 - ROBOTICS
 - QUANTUM
@@ -20,7 +20,7 @@ Este módulo NÃO decide se uma empresa é boa ou ruim.
 
 Ele NÃO calcula fundamentos.
 Ele NÃO calcula timing.
-Ele NÃO altera o universo S&P 500.
+Ele NÃO altera a composição do S&P 500.
 
 A função é somente organizar corretamente as empresas elegíveis
 para os dois motores do robô.
@@ -39,9 +39,13 @@ from config.thematic_universe import (
     ALLOWED_THEMES,
 )
 
+from data.sp500_universe import (
+    build_thematic_sp500_universe,
+)
+
 
 # =============================================================================
-# COLUNAS OBRIGATÓRIAS
+# COLUNAS OBRIGATÓRIAS — UNIVERSO TEMÁTICO
 # =============================================================================
 
 REQUIRED_COLUMNS = {
@@ -59,15 +63,15 @@ REQUIRED_COLUMNS = {
 
 
 # =============================================================================
-# VALIDAÇÃO DA ENTRADA
+# VALIDAÇÃO DA ENTRADA TEMÁTICA
 # =============================================================================
 
 def validate_input(
     universe: pd.DataFrame,
 ) -> bool:
     """
-    Valida o universo recebido do módulo
-    data/sp500_universe.py.
+    Valida o universo temático já cruzado
+    com o S&P 500.
     """
 
     if not isinstance(
@@ -100,6 +104,7 @@ def validate_input(
         )
 
     if universe["ticker"].duplicated().any():
+
         duplicates = (
             universe.loc[
                 universe["ticker"].duplicated(
@@ -131,7 +136,10 @@ def validate_input(
             f"{sorted(invalid_themes)}"
         )
 
-    if not universe["in_sp500"].fillna(False).all():
+    if not universe[
+        "in_sp500"
+    ].fillna(False).all():
+
         raise ValueError(
             "Empresa fora do S&P 500 entrou "
             "no classificador temático."
@@ -483,13 +491,10 @@ def validate_classification(
             "do universo Quantum."
         )
 
-    # -------------------------------------------------------------------------
-    # GICS deve permanecer disponível.
-    # -------------------------------------------------------------------------
-
     if robotics[
         "gics_sector"
     ].isna().any():
+
         raise AssertionError(
             "Setor GICS ausente no universo Robotics."
         )
@@ -497,6 +502,7 @@ def validate_classification(
     if quantum[
         "gics_sector"
     ].isna().any():
+
         raise AssertionError(
             "Setor GICS ausente no universo Quantum."
         )
@@ -640,3 +646,82 @@ def print_classification(
             index=False
         )
     )
+
+
+# =============================================================================
+# INTERFACE DO MAIN.PY
+# =============================================================================
+
+class ThematicClassifier:
+    """
+    Interface operacional utilizada pelo main.py.
+
+    Recebe o S&P 500 completo.
+
+    Etapas:
+        S&P 500 completo
+            ↓
+        cruzamento com universo temático congelado
+            ↓
+        validação
+            ↓
+        universo temático elegível
+
+    A separação independente ROBOTICS / QUANTUM continua
+    disponível através de classify_themes().
+    """
+
+    @staticmethod
+    def calculate(
+        sp500: pd.DataFrame,
+    ) -> pd.DataFrame:
+
+        if not isinstance(
+            sp500,
+            pd.DataFrame,
+        ):
+            raise TypeError(
+                "S&P 500 deve ser um pandas DataFrame."
+            )
+
+        if sp500.empty:
+            raise ValueError(
+                "Universo S&P 500 vazio."
+            )
+
+        thematic = (
+            build_thematic_sp500_universe(
+                sp500
+            )
+        )
+
+        validate_input(
+            thematic
+        )
+
+        # Executa também a auditoria dos dois universos.
+        classified = (
+            classify_themes(
+                thematic
+            )
+        )
+
+        # Validação explícita.
+        validate_classification(
+            universe=thematic,
+            robotics=classified["ROBOTICS"],
+            quantum=classified["QUANTUM"],
+        )
+
+        return (
+            thematic
+            .sort_values(
+                [
+                    "theme",
+                    "ticker",
+                ]
+            )
+            .reset_index(
+                drop=True
+            )
+        )
