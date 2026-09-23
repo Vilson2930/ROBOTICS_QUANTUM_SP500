@@ -99,6 +99,10 @@ from reports.report_generator import (
     ReportGenerator,
 )
 
+from reports.email_report import (
+    EmailReport,
+)
+
 
 # ============================================================
 # CONFIGURAÇÃO DE EXECUÇÃO
@@ -882,6 +886,27 @@ def run() -> dict:
         "Quantum sem timing técnico: OK"
     )
 
+    # ========================================================
+    # 15 — RELATÓRIO POR E-MAIL
+    # ========================================================
+    #
+    # Esta etapa ocorre somente após a auditoria completa
+    # da arquitetura. O módulo de e-mail não recalcula
+    # seleção, ranking, timing ou sinais.
+    # ========================================================
+
+    print_stage(
+        15,
+        "RELATÓRIO POR E-MAIL",
+    )
+
+    email_report = (
+        EmailReport.generate_and_send(
+            portfolio=
+                portfolio,
+        )
+    )
+
     print()
     print("=" * 120)
 
@@ -927,6 +952,9 @@ def run() -> dict:
 
         "report":
             report,
+
+        "email_report":
+            email_report,
     }
 
 
