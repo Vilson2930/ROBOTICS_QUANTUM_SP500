@@ -770,15 +770,15 @@ def _html_robotics_table(
         rows.append(
             f"""
             <tr>
-                <td>{position}</td>
-                <td><strong>{ticker}</strong></td>
-                <td>{fundamental}</td>
-                <td>{institutional}</td>
-                <td>{technical}</td>
-                <td>{timing}</td>
-                <td>{final_score}</td>
-                <td>{timing_status}</td>
-                <td><strong>{action}</strong></td>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:center;">{position}</td>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:center;"><strong>{ticker}</strong></td>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:center;">{fundamental}</td>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:center;">{institutional}</td>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:center;">{technical}</td>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:center;">{timing}</td>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:center;">{final_score}</td>
+                <td style="border:1px solid #d1d5db; padding:8px;">{timing_status}</td>
+                <td style="border:1px solid #d1d5db; padding:8px;"><strong>{action}</strong></td>
             </tr>
             """
         )
@@ -819,6 +819,7 @@ def _html_robotics_table(
                     cellspacing="0"
                     style="
                         border-collapse:collapse;
+                        border-spacing:0;
                         width:100%;
                         font-size:12px;
                     "
@@ -830,15 +831,15 @@ def _html_robotics_table(
                             background:#f3f4f6;
                         ">
 
-                            <th>Pos.</th>
-                            <th>Ticker</th>
-                            <th>Fund.</th>
-                            <th>Inst.</th>
-                            <th>Técnico</th>
-                            <th>Timing</th>
-                            <th>Final</th>
-                            <th>Status</th>
-                            <th>Decisão</th>
+                            <th style="border:1px solid #d1d5db; padding:8px;">Pos.</th>
+                            <th style="border:1px solid #d1d5db; padding:8px;">Ticker</th>
+                            <th style="border:1px solid #d1d5db; padding:8px;">Fund.</th>
+                            <th style="border:1px solid #d1d5db; padding:8px;">Inst.</th>
+                            <th style="border:1px solid #d1d5db; padding:8px;">Técnico</th>
+                            <th style="border:1px solid #d1d5db; padding:8px;">Timing</th>
+                            <th style="border:1px solid #d1d5db; padding:8px;">Final</th>
+                            <th style="border:1px solid #d1d5db; padding:8px;">Status</th>
+                            <th style="border:1px solid #d1d5db; padding:8px;">Decisão</th>
 
                         </tr>
 
@@ -912,11 +913,11 @@ def _html_quantum_table(
         rows.append(
             f"""
             <tr>
-                <td>{position}</td>
-                <td><strong>{ticker}</strong></td>
-                <td>{company}</td>
-                <td>{fundamental}</td>
-                <td><strong>{action}</strong></td>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:center;">{position}</td>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:center;"><strong>{ticker}</strong></td>
+                <td style="border:1px solid #d1d5db; padding:8px;">{company}</td>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:center;">{fundamental}</td>
+                <td style="border:1px solid #d1d5db; padding:8px;"><strong>{action}</strong></td>
             </tr>
             """
         )
@@ -954,6 +955,7 @@ def _html_quantum_table(
                 cellspacing="0"
                 style="
                     border-collapse:collapse;
+                    border-spacing:0;
                     width:100%;
                     font-size:13px;
                 "
@@ -965,11 +967,11 @@ def _html_quantum_table(
                         background:#f3f4f6;
                     ">
 
-                        <th>Pos.</th>
-                        <th>Ticker</th>
-                        <th>Empresa</th>
-                        <th>Growth Score</th>
-                        <th>Decisão</th>
+                        <th style="border:1px solid #d1d5db; padding:8px;">Pos.</th>
+                        <th style="border:1px solid #d1d5db; padding:8px;">Ticker</th>
+                        <th style="border:1px solid #d1d5db; padding:8px;">Empresa</th>
+                        <th style="border:1px solid #d1d5db; padding:8px;">Growth Score</th>
+                        <th style="border:1px solid #d1d5db; padding:8px;">Decisão</th>
 
                     </tr>
 
@@ -1956,7 +1958,7 @@ def generate_pdf(
     architecture_lines = [
         (
             "Universo: somente empresas pertencentes "
-            "ao S&P 500 e classificadas nos temas "
+            "ao S&amp;P 500 e classificadas nos temas "
             "Robotics e/ou Quantum Computing."
         ),
 
