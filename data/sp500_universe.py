@@ -8,10 +8,8 @@ FUNÇÃO
 ------
 1. Buscar a composição atual do S&P 500.
 2. Normalizar os tickers.
-3. Cruzar o índice com o universo temático congelado.
-4. Permitir somente empresas que:
-   - estejam atualmente no S&P 500;
-   - estejam classificadas como Robotics, Quantum ou Both.
+3. Disponibilizar o S&P 500 completo ao pipeline principal.
+4. Permitir o cruzamento com o universo temático congelado.
 
 IMPORTANTE
 ----------
@@ -81,7 +79,9 @@ STANDARD_COLUMNS = [
 # NORMALIZAÇÃO
 # =============================================================================
 
-def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_columns(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Converte as colunas da tabela do S&P 500
     para o padrão interno do projeto.
@@ -244,6 +244,48 @@ def download_sp500() -> pd.DataFrame:
         )
 
     return result
+
+
+# =============================================================================
+# INTERFACE PRINCIPAL PARA O MAIN.PY
+# =============================================================================
+
+def get_sp500_universe(
+    save: bool = True,
+) -> pd.DataFrame:
+    """
+    Retorna o universo COMPLETO e atual do S&P 500.
+
+    Esta é a interface utilizada pelo main.py.
+
+    IMPORTANTE
+    ----------
+    Esta função NÃO aplica classificação temática.
+
+    A classificação Robotics / Quantum ocorre posteriormente
+    no ThematicClassifier, preservando a arquitetura:
+
+        S&P 500
+            ↓
+        ThematicClassifier
+            ↓
+        FundamentalData
+            ↓
+        FundamentalSelection
+    """
+
+    sp500 = download_sp500()
+
+    validate_sp500(
+        sp500
+    )
+
+    if save:
+        save_current_universe(
+            sp500
+        )
+
+    return sp500
 
 
 # =============================================================================
@@ -469,6 +511,7 @@ def validate_sp500(
         )
 
     if sp500["ticker"].duplicated().any():
+
         duplicates = (
             sp500.loc[
                 sp500["ticker"].duplicated(
@@ -568,29 +611,25 @@ def save_current_universe(
 
 
 # =============================================================================
-# EXECUÇÃO PRINCIPAL DO MÓDULO
+# INTERFACE ALTERNATIVA
 # =============================================================================
 
 def get_current_universe(
     save: bool = True,
 ) -> pd.DataFrame:
     """
-    Pipeline principal do módulo.
-
     Retorna apenas as empresas temáticas
     atualmente elegíveis no S&P 500.
+
+    Mantida por compatibilidade.
+
+    Para o pipeline principal do robô deve ser utilizada:
+        get_sp500_universe()
     """
 
-    sp500 = download_sp500()
-
-    validate_sp500(
-        sp500
+    sp500 = get_sp500_universe(
+        save=save
     )
-
-    if save:
-        save_current_universe(
-            sp500
-        )
 
     thematic = (
         build_thematic_sp500_universe(
@@ -624,10 +663,8 @@ if __name__ == "__main__":
         "=" * 90
     )
 
-    sp500 = download_sp500()
-
-    validate_sp500(
-        sp500
+    sp500 = get_sp500_universe(
+        save=True
     )
 
     thematic = (
@@ -636,14 +673,12 @@ if __name__ == "__main__":
         )
     )
 
-    outside = (
-        find_thematic_companies_outside_sp500(
-            sp500
-        )
+    validate_thematic_universe(
+        thematic
     )
 
-    save_path = (
-        save_current_universe(
+    outside = (
+        find_thematic_companies_outside_sp500(
             sp500
         )
     )
@@ -689,7 +724,7 @@ if __name__ == "__main__":
     if outside.empty:
 
         print(
-            "\nTodas as 21 empresas temáticas "
+            "\nTodas as empresas temáticas "
             "permanecem no S&P 500."
         )
 
@@ -705,11 +740,6 @@ if __name__ == "__main__":
                 index=False
             )
         )
-
-    print(
-        f"\nSnapshot salvo em: "
-        f"{save_path}"
-    )
 
     print(
         "\nMódulo concluído com sucesso."
