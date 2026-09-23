@@ -282,9 +282,8 @@ def get_company_facts(
         except Exception:
             pass
 
-    url = (
-        f"{SEC_COMPANY_FACTS_URL}"
-        f"CIK{cik}.json"
+    url = SEC_COMPANY_FACTS_URL.format(
+        cik=cik
     )
 
     data = request_json(url)
@@ -743,7 +742,9 @@ def download_fundamentals(
 
         except Exception as exc:
 
-            print("ERRO")
+            print(
+                f"ERRO — {type(exc).__name__}: {exc}"
+            )
 
             errors.append(
                 {
