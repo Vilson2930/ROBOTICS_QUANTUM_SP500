@@ -47,16 +47,33 @@ from config.settings import (
 # =============================================================================
 # DEFINIÇÕES DOS FATORES
 # =============================================================================
+#
+# IMPORTANTE:
+# As chaves e os nomes internos abaixo seguem exatamente a interface
+# utilizada pelo fundamental_selection.py:
+#
+#   financial_strength
+#   growth
+#
+# e:
+#
+#   higher
+#   lower
+#   minimum_components
+#
+# A nomenclatura em minúsculas é uma interface técnica.
+# Ela NÃO altera a política fundamental congelada.
+# =============================================================================
 
 FACTOR_DEFINITIONS = {
 
-    "FINANCIAL_STRENGTH": {
+    "financial_strength": {
 
-        "higher_is_better": list(
+        "higher": list(
             ROBOTICS_FINANCIAL_STRENGTH_HIGHER_IS_BETTER
         ),
 
-        "lower_is_better": list(
+        "lower": list(
             ROBOTICS_FINANCIAL_STRENGTH_LOWER_IS_BETTER
         ),
 
@@ -64,13 +81,13 @@ FACTOR_DEFINITIONS = {
             ROBOTICS_MIN_COMPONENTS,
     },
 
-    "GROWTH": {
+    "growth": {
 
-        "higher_is_better": list(
+        "higher": list(
             QUANTUM_GROWTH_HIGHER_IS_BETTER
         ),
 
-        "lower_is_better": [],
+        "lower": [],
 
         "minimum_components":
             QUANTUM_MIN_COMPONENTS,
@@ -262,18 +279,41 @@ PROTECTION_POLICY = {
 # FUNÇÕES AUXILIARES
 # =============================================================================
 
-def get_factor_definition(factor_name):
+def normalize_factor_name(
+    factor_name,
+):
+    """
+    Converte o nome público/configurado do fator
+    para a chave técnica utilizada pelo motor.
+
+    Exemplos:
+        FINANCIAL_STRENGTH -> financial_strength
+        GROWTH             -> growth
+    """
+
+    return (
+        str(factor_name)
+        .strip()
+        .lower()
+    )
+
+
+def get_factor_definition(
+    factor_name,
+):
     """
     Retorna a definição oficial de um fator.
     """
 
-    factor_name = str(
+    factor_name = normalize_factor_name(
         factor_name
-    ).upper()
+    )
 
     if factor_name not in FACTOR_DEFINITIONS:
+
         raise ValueError(
-            f"Fator não autorizado: {factor_name}"
+            f"Fator não autorizado: "
+            f"{factor_name}"
         )
 
     return FACTOR_DEFINITIONS[
@@ -281,18 +321,24 @@ def get_factor_definition(factor_name):
     ]
 
 
-def get_theme_policy(theme):
+def get_theme_policy(
+    theme,
+):
     """
     Retorna a política oficial de um tema.
     """
 
-    theme = str(
-        theme
-    ).upper()
+    theme = (
+        str(theme)
+        .strip()
+        .upper()
+    )
 
     if theme not in THEME_POLICY:
+
         raise ValueError(
-            f"Tema não autorizado: {theme}"
+            f"Tema não autorizado: "
+            f"{theme}"
         )
 
     return THEME_POLICY[
@@ -300,24 +346,38 @@ def get_theme_policy(theme):
     ]
 
 
-def get_top_n(theme):
+def get_top_n(
+    theme,
+):
     """
     Retorna o número oficial de empresas
     selecionadas para o tema.
     """
 
     return int(
-        get_theme_policy(theme)["top_n"]
+        get_theme_policy(
+            theme
+        )[
+            "top_n"
+        ]
     )
 
 
-def get_factor_for_theme(theme):
+def get_factor_for_theme(
+    theme,
+):
     """
     Retorna o fator oficial utilizado pelo tema.
+
+    Mantém o nome oficial definido em settings.py.
     """
 
     return str(
-        get_theme_policy(theme)["factor"]
+        get_theme_policy(
+            theme
+        )[
+            "factor"
+        ]
     )
 
 
@@ -331,44 +391,138 @@ def validate_frozen_policy():
     validada pelo estudo.
     """
 
-    assert ROBOTICS_FACTOR == "FINANCIAL_STRENGTH"
+    # -------------------------------------------------------------------------
+    # Política oficial
+    # -------------------------------------------------------------------------
+
+    assert ROBOTICS_FACTOR == (
+        "FINANCIAL_STRENGTH"
+    )
+
     assert ROBOTICS_TOP_N == 5
 
-    assert QUANTUM_FACTOR == "GROWTH"
+    assert ROBOTICS_MIN_COMPONENTS == 2
+
+    assert QUANTUM_FACTOR == (
+        "GROWTH"
+    )
+
     assert QUANTUM_TOP_N == 2
 
-    robotics = FACTOR_DEFINITIONS[
-        "FINANCIAL_STRENGTH"
-    ]
+    assert QUANTUM_MIN_COMPONENTS == 2
 
-    quantum = FACTOR_DEFINITIONS[
-        "GROWTH"
-    ]
+    # -------------------------------------------------------------------------
+    # Interface técnica dos fatores
+    # -------------------------------------------------------------------------
 
-    assert robotics["higher_is_better"] == [
+    assert (
+        normalize_factor_name(
+            ROBOTICS_FACTOR
+        )
+        ==
+        "financial_strength"
+    )
+
+    assert (
+        normalize_factor_name(
+            QUANTUM_FACTOR
+        )
+        ==
+        "growth"
+    )
+
+    assert (
+        "financial_strength"
+        in
+        FACTOR_DEFINITIONS
+    )
+
+    assert (
+        "growth"
+        in
+        FACTOR_DEFINITIONS
+    )
+
+    robotics = (
+        FACTOR_DEFINITIONS[
+            "financial_strength"
+        ]
+    )
+
+    quantum = (
+        FACTOR_DEFINITIONS[
+            "growth"
+        ]
+    )
+
+    # -------------------------------------------------------------------------
+    # Financial Strength
+    # -------------------------------------------------------------------------
+
+    assert robotics[
+        "higher"
+    ] == [
         "cash_assets"
     ]
 
-    assert robotics["lower_is_better"] == [
+    assert robotics[
+        "lower"
+    ] == [
         "debt_assets",
         "debt_equity",
     ]
 
-    assert robotics["minimum_components"] == 2
+    assert robotics[
+        "minimum_components"
+    ] == 2
 
-    assert quantum["higher_is_better"] == [
+    # -------------------------------------------------------------------------
+    # Growth
+    # -------------------------------------------------------------------------
+
+    assert quantum[
+        "higher"
+    ] == [
         "revenue_growth",
         "eps_growth",
         "operating_cash_flow_growth",
     ]
 
-    assert quantum["lower_is_better"] == []
+    assert quantum[
+        "lower"
+    ] == []
 
-    assert quantum["minimum_components"] == 2
+    assert quantum[
+        "minimum_components"
+    ] == 2
+
+    # -------------------------------------------------------------------------
+    # BOTH
+    # -------------------------------------------------------------------------
+
+    assert BOTH_POLICY[
+        "participates_in_robotics"
+    ] is True
+
+    assert BOTH_POLICY[
+        "participates_in_quantum"
+    ] is True
 
     assert BOTH_POLICY[
         "rank_independently"
     ] is True
+
+    assert BOTH_POLICY[
+        "deduplicate_final_company"
+    ] is True
+
+    assert BOTH_POLICY[
+        "preserve_theme_memberships"
+    ] is True
+
+    # -------------------------------------------------------------------------
+    # Proteções da arquitetura
+    # -------------------------------------------------------------------------
 
     assert PROTECTION_POLICY[
         "timing_can_change_selection"
@@ -383,6 +537,10 @@ def validate_frozen_policy():
     ] is False
 
     assert PROTECTION_POLICY[
+        "price_drop_can_generate_sell"
+    ] is False
+
+    assert PROTECTION_POLICY[
         "future_returns_allowed"
     ] is False
 
@@ -393,5 +551,8 @@ def validate_frozen_policy():
     return True
 
 
-# Executar validação ao importar o módulo.
+# =============================================================================
+# EXECUTAR VALIDAÇÃO AO IMPORTAR
+# =============================================================================
+
 validate_frozen_policy()
