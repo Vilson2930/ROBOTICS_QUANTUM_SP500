@@ -67,7 +67,13 @@ ROOT = BASE_DIR
 
 DATA_DIR = BASE_DIR / "data"
 REPORTS_DIR = BASE_DIR / "reports"
-OUTPUT_DIR = BASE_DIR / "output"
+
+# Diretório oficial de saída do novo robô.
+OUTPUTS_DIR = BASE_DIR / "outputs"
+
+# Compatibilidade com módulos que utilizem o nome OUTPUT_DIR.
+OUTPUT_DIR = OUTPUTS_DIR
+
 CACHE_DIR = BASE_DIR / "cache"
 
 # Nomes utilizados pelos módulos originais.
@@ -468,7 +474,7 @@ VERBOSE = True
 for directory in (
     DATA_DIR,
     REPORTS_DIR,
-    OUTPUT_DIR,
+    OUTPUTS_DIR,
     CACHE_DIR,
 ):
     directory.mkdir(
