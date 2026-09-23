@@ -337,10 +337,15 @@ TOP_N = 20
 # SEC
 # =============================================================================
 
-SEC_COMPANYFACTS_URL = (
+# Nome oficial utilizado pelo novo módulo fundamental_data.py.
+SEC_COMPANY_FACTS_URL = (
     "https://data.sec.gov/api/xbrl/companyfacts/"
     "CIK{cik}.json"
 )
+
+# Alias de compatibilidade.
+# Mantido para qualquer módulo que ainda utilize a nomenclatura antiga.
+SEC_COMPANYFACTS_URL = SEC_COMPANY_FACTS_URL
 
 SEC_TICKER_CIK_URL = (
     "https://www.sec.gov/files/company_tickers.json"
