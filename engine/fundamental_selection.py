@@ -1,51 +1,45 @@
-"""
-ROBOTICS_QUANTUM_SP500
-======================
-
-Motor de seleção fundamental.
-
-POLÍTICA CONGELADA
-------------------
-ROBOTICS
-    Financial Strength
-    Top 5
-
-    cash_assets ↑
-    debt_assets ↓
-    debt_equity ↓
-
-QUANTUM
-    Growth
-    Top 2
-
-    revenue_growth ↑
-    eps_growth ↑
-    operating_cash_flow_growth ↑
-
-METODOLOGIA
------------
-1. Separar universo por tema.
-2. Utilizar somente componentes fundamentais válidos.
-3. Winsorizar P5-P95 dentro do universo temático.
-4. Calcular percentis dentro do universo temático.
-5. Inverter percentis das métricas em que menor é melhor.
-6. Calcular média dos componentes válidos.
-7. Exigir no mínimo 2 de 3 componentes.
-8. Ordenar pelo score.
-9. Selecionar Top 5 Robotics.
-10. Selecionar Top 2 Quantum.
-
-IMPORTANTE
-----------
-Este módulo NÃO usa timing.
-Este módulo NÃO usa preço.
-Este módulo NÃO usa retorno futuro.
-Este módulo NÃO gera venda.
-"""
+# ======================================================================================
+# ROBOTICS_QUANTUM_SP500
+# engine/fundamental_selection.py
+# ======================================================================================
+#
+# RESPONSABILIDADE
+# ---------------
+# Selecionar as melhores empresas do universo temático:
+#
+# ROBOTICS
+#   -> Financial Strength
+#   -> Top 5
+#
+# QUANTUM
+#   -> Growth
+#   -> Top 2
+#
+# METODOLOGIA FUNDAMENTAL
+# -----------------------
+# Reproduz a metodologia validada no PORTFOLIO ACOES AMERICANO:
+#
+#   1. métricas fundamentais
+#   2. winsorização P5-P95 dentro do universo do tema
+#   3. percentis dentro do universo do tema
+#   4. média dos componentes válidos
+#   5. mínimo de 2 componentes
+#   6. ranking fundamental
+#   7. Top N
+#
+# IMPORTANTE
+# ----------
+# • BOTH participa independentemente de ROBOTICS e QUANTUM.
+# • Timing NÃO participa desta seleção.
+# • Timing NÃO altera ranking fundamental.
+# • Timing NÃO altera propriedade.
+# • Timing NÃO gera venda.
+# • A proteção de fronteira 5º x 6º do robô original NÃO é utilizada aqui,
+#   pois não foi validada no estudo ROBOTICS_QUANTUM_SP500.
+#
+# ======================================================================================
 
 from __future__ import annotations
-
-from typing import Dict, Iterable, List
 
 import numpy as np
 import pandas as pd
@@ -57,122 +51,154 @@ from config.fundamental_policy import (
 )
 
 
-# =============================================================================
-# CONFIGURAÇÃO
-# =============================================================================
+# ======================================================================================
+# 1. CONSTANTES
+# ======================================================================================
 
-WINSOR_LOWER = 0.05
-WINSOR_UPPER = 0.95
+ROBOTICS_THEME = "ROBOTICS"
+QUANTUM_THEME = "QUANTUM"
+BOTH_THEME = "BOTH"
 
+ROBOTICS_FACTOR = "financial_strength"
+QUANTUM_FACTOR = "growth"
 
-# =============================================================================
-# COLUNAS FUNDAMENTAIS
-# =============================================================================
-
-FINANCIAL_STRENGTH_COLUMNS = [
-    "cash_assets",
-    "debt_assets",
-    "debt_equity",
-]
-
-GROWTH_COLUMNS = [
-    "revenue_growth",
-    "eps_growth",
-    "operating_cash_flow_growth",
-]
+ROBOTICS_TOP_N = 5
+QUANTUM_TOP_N = 2
 
 
-# =============================================================================
-# VALIDAÇÃO
-# =============================================================================
+# ======================================================================================
+# 2. HELPERS
+# ======================================================================================
 
-def validate_snapshot(
-    snapshot: pd.DataFrame,
-) -> bool:
+def normalize_ticker(
+    ticker: str,
+) -> str:
+
+    return (
+        str(ticker)
+        .upper()
+        .strip()
+        .replace(".", "-")
+    )
+
+
+def winsorize_series(
+    series: pd.Series,
+) -> pd.Series:
     """
-    Valida o snapshot recebido de fundamental_data.py.
+    Winsorização P5-P95.
+
+    Reprodução da metodologia do robô fundamental original.
+
+    Se houver menos de 10 valores válidos, não aplica winsorização.
     """
 
-    if not isinstance(
-        snapshot,
-        pd.DataFrame,
-    ):
-        raise TypeError(
-            "snapshot deve ser pandas DataFrame."
+    values = pd.to_numeric(
+        series,
+        errors="coerce",
+    )
+
+    valid = values.dropna()
+
+    if len(valid) < 10:
+        return values
+
+    lower = valid.quantile(0.05)
+    upper = valid.quantile(0.95)
+
+    return values.clip(
+        lower=lower,
+        upper=upper,
+    )
+
+
+def percentile_score(
+    series: pd.Series,
+    lower_is_better: bool = False,
+) -> pd.Series:
+    """
+    Score maior = empresa melhor.
+
+    Reprodução exata da lógica do selection.py oficial:
+
+        values.rank(
+            pct=True,
+            ascending=not lower_is_better,
+            method="average",
         )
 
-    if snapshot.empty:
+    Portanto:
+
+    higher is better:
+        ascending=True
+
+    lower is better:
+        ascending=False
+    """
+
+    values = pd.to_numeric(
+        series,
+        errors="coerce",
+    )
+
+    return values.rank(
+        pct=True,
+        ascending=not lower_is_better,
+        method="average",
+    )
+
+
+# ======================================================================================
+# 3. NORMALIZAÇÃO DO SNAPSHOT
+# ======================================================================================
+
+def prepare_fundamental_snapshot(
+    fundamentals: pd.DataFrame,
+) -> pd.DataFrame:
+
+    if fundamentals is None:
+        raise ValueError(
+            "Snapshot fundamental não informado."
+        )
+
+    if fundamentals.empty:
         raise ValueError(
             "Snapshot fundamental vazio."
         )
 
-    required = {
-        "ticker",
-        "theme",
+    df = fundamentals.copy()
+
+    if "ticker" not in df.columns:
+        raise ValueError(
+            "Snapshot fundamental precisa conter 'ticker'."
+        )
+
+    df["ticker"] = (
+        df["ticker"]
+        .map(
+            normalize_ticker
+        )
+    )
+
+    required_metrics = [
         "cash_assets",
         "debt_assets",
         "debt_equity",
         "revenue_growth",
         "eps_growth",
         "operating_cash_flow_growth",
-    }
+    ]
 
-    missing = (
-        required
-        - set(snapshot.columns)
-    )
+    for column in required_metrics:
 
-    if missing:
-        raise ValueError(
-            "Colunas fundamentais ausentes: "
-            f"{sorted(missing)}"
-        )
+        if column not in df.columns:
+            df[column] = np.nan
 
-    if snapshot[
-        "ticker"
-    ].isna().any():
-        raise ValueError(
-            "Ticker ausente no snapshot."
-        )
-
-    if snapshot[
-        "ticker"
-    ].duplicated().any():
-        raise ValueError(
-            "Ticker duplicado no snapshot fundamental."
-        )
-
-    return True
-
-
-# =============================================================================
-# NORMALIZAÇÃO NUMÉRICA
-# =============================================================================
-
-def normalize_numeric_columns(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Converte métricas fundamentais para valores numéricos
-    e remove infinitos.
-    """
-
-    result = df.copy()
-
-    columns = (
-        FINANCIAL_STRENGTH_COLUMNS
-        + GROWTH_COLUMNS
-    )
-
-    for column in columns:
-
-        result[column] = pd.to_numeric(
-            result[column],
-            errors="coerce",
-        )
-
-        result[column] = (
-            result[column]
+        df[column] = (
+            pd.to_numeric(
+                df[column],
+                errors="coerce",
+            )
             .replace(
                 [
                     np.inf,
@@ -182,19 +208,50 @@ def normalize_numeric_columns(
             )
         )
 
-    return result
+    return (
+        df
+        .drop_duplicates(
+            subset=[
+                "ticker"
+            ]
+        )
+        .reset_index(
+            drop=True
+        )
+    )
 
 
-# =============================================================================
-# UNIVERSO DE RANKING
-# =============================================================================
+# ======================================================================================
+# 4. UNIVERSO DE CADA TEMA
+# ======================================================================================
+
+def _get_theme_column(
+    df: pd.DataFrame,
+) -> str:
+
+    candidates = [
+        "theme",
+        "thematic_theme",
+        "classification",
+    ]
+
+    for column in candidates:
+
+        if column in df.columns:
+            return column
+
+    raise ValueError(
+        "Snapshot fundamental não contém coluna temática. "
+        "Esperado: 'theme'."
+    )
+
 
 def build_theme_universe(
-    snapshot: pd.DataFrame,
-    theme: str,
+    fundamentals: pd.DataFrame,
+    ranking_theme: str,
 ) -> pd.DataFrame:
     """
-    Cria o universo independente utilizado no ranking.
+    Constrói o universo independente de cada ranking.
 
     ROBOTICS:
         ROBOTICS + BOTH
@@ -203,131 +260,211 @@ def build_theme_universe(
         QUANTUM + BOTH
     """
 
-    theme = str(
-        theme
-    ).upper()
+    df = prepare_fundamental_snapshot(
+        fundamentals
+    )
 
-    if theme == "ROBOTICS":
+    theme_column = _get_theme_column(
+        df
+    )
 
-        allowed = {
-            "ROBOTICS",
-            "BOTH",
-        }
+    themes = (
+        df[theme_column]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
 
-    elif theme == "QUANTUM":
+    if ranking_theme == ROBOTICS_THEME:
 
-        allowed = {
-            "QUANTUM",
-            "BOTH",
-        }
+        mask = themes.isin(
+            [
+                ROBOTICS_THEME,
+                BOTH_THEME,
+            ]
+        )
+
+    elif ranking_theme == QUANTUM_THEME:
+
+        mask = themes.isin(
+            [
+                QUANTUM_THEME,
+                BOTH_THEME,
+            ]
+        )
 
     else:
 
         raise ValueError(
-            f"Tema inválido: {theme}"
+            f"Tema de ranking desconhecido: "
+            f"{ranking_theme}"
         )
 
-    df = snapshot.loc[
-        snapshot["theme"]
-        .astype(str)
-        .str.upper()
-        .isin(
-            allowed
-        )
+    result = df[
+        mask
     ].copy()
 
-    if df.empty:
-        raise RuntimeError(
-            f"Universo {theme} vazio."
+    result[
+        "ranking_theme"
+    ] = ranking_theme
+
+    return (
+        result
+        .drop_duplicates(
+            subset=[
+                "ticker"
+            ]
         )
-
-    df["ranking_theme"] = (
-        theme
-    )
-
-    return df
-
-
-# =============================================================================
-# WINSORIZAÇÃO
-# =============================================================================
-
-def winsorize_series(
-    series: pd.Series,
-    lower: float = WINSOR_LOWER,
-    upper: float = WINSOR_UPPER,
-) -> pd.Series:
-    """
-    Winsorização P5-P95.
-
-    Valores ausentes permanecem ausentes.
-    """
-
-    numeric = pd.to_numeric(
-        series,
-        errors="coerce",
-    )
-
-    valid = numeric.dropna()
-
-    if valid.empty:
-        return numeric
-
-    if len(valid) == 1:
-        return numeric
-
-    lower_bound = valid.quantile(
-        lower
-    )
-
-    upper_bound = valid.quantile(
-        upper
-    )
-
-    return numeric.clip(
-        lower=lower_bound,
-        upper=upper_bound,
+        .reset_index(
+            drop=True
+        )
     )
 
 
-# =============================================================================
-# SCORE DE FATOR
-# =============================================================================
+# ======================================================================================
+# 5. SCORE GENÉRICO DE FATOR
+# ======================================================================================
 
 def calculate_factor_score(
     theme_df: pd.DataFrame,
     factor_name: str,
 ) -> pd.DataFrame:
     """
-    Calcula score de um fator exatamente dentro
-    do universo temático recebido.
+    Reprodução da metodologia do selection.py oficial.
 
-    A maior pontuação é sempre melhor.
+    O DataFrame recebido contém somente empresas participantes
+    daquele tema.
+
+    Portanto, winsorização e percentis são calculados
+    transversalmente dentro do universo temático correspondente.
     """
 
-    factor_name = str(
-        factor_name
-    ).upper()
-
     if factor_name not in FACTOR_DEFINITIONS:
-        raise ValueError(
-            f"Fator desconhecido: {factor_name}"
+
+        raise RuntimeError(
+            f"Fator desconhecido: "
+            f"{factor_name}"
         )
 
-    definition = FACTOR_DEFINITIONS[
-        factor_name
-    ]
+    df = theme_df.copy()
 
-    higher = list(
-        definition[
-            "higher_is_better"
+    definition = (
+        FACTOR_DEFINITIONS[
+            factor_name
         ]
     )
 
-    lower = list(
-        definition[
-            "lower_is_better"
-        ]
+    higher_metrics = list(
+        definition["higher"]
+    )
+
+    lower_metrics = list(
+        definition["lower"]
+    )
+
+    all_metrics = (
+        higher_metrics
+        +
+        lower_metrics
+    )
+
+    for metric in all_metrics:
+
+        if metric not in df.columns:
+            df[metric] = np.nan
+
+        df[metric] = (
+            pd.to_numeric(
+                df[metric],
+                errors="coerce",
+            )
+            .replace(
+                [
+                    np.inf,
+                    -np.inf,
+                ],
+                np.nan,
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # WINSORIZAÇÃO P5-P95
+    # ------------------------------------------------------------------
+
+    winsorized = pd.DataFrame(
+        index=df.index
+    )
+
+    for metric in all_metrics:
+
+        winsorized[
+            metric
+        ] = winsorize_series(
+            df[metric]
+        )
+
+    # ------------------------------------------------------------------
+    # PERCENTIS
+    # ------------------------------------------------------------------
+
+    components = pd.DataFrame(
+        index=df.index
+    )
+
+    for metric in higher_metrics:
+
+        components[
+            metric
+        ] = percentile_score(
+            winsorized[metric],
+            lower_is_better=False,
+        )
+
+    for metric in lower_metrics:
+
+        components[
+            metric
+        ] = percentile_score(
+            winsorized[metric],
+            lower_is_better=True,
+        )
+
+    # ------------------------------------------------------------------
+    # COMPONENTES DISPONÍVEIS
+    # ------------------------------------------------------------------
+
+    components_column = (
+        f"{factor_name}_components"
+    )
+
+    score_column = (
+        f"{factor_name}_score"
+    )
+
+    df[
+        components_column
+    ] = (
+        components
+        .notna()
+        .sum(
+            axis=1
+        )
+    )
+
+    # ------------------------------------------------------------------
+    # SCORE DEFINITIVO
+    #
+    # Média dos percentis válidos.
+    # ------------------------------------------------------------------
+
+    df[
+        score_column
+    ] = (
+        components
+        .mean(
+            axis=1,
+            skipna=True,
+        )
     )
 
     minimum_components = int(
@@ -336,219 +473,99 @@ def calculate_factor_score(
         ]
     )
 
-    metrics = (
-        higher
-        + lower
-    )
-
-    df = theme_df.copy()
-
-    missing = (
-        set(metrics)
-        - set(df.columns)
-    )
-
-    if missing:
-        raise ValueError(
-            f"Métricas ausentes para {factor_name}: "
-            f"{sorted(missing)}"
-        )
-
-    score_columns: List[str] = []
-
-    # -------------------------------------------------------------------------
-    # HIGHER IS BETTER
-    # -------------------------------------------------------------------------
-
-    for metric in higher:
-
-        winsor_column = (
-            f"{metric}_winsor"
-        )
-
-        percentile_column = (
-            f"{metric}_percentile"
-        )
-
-        df[winsor_column] = (
-            winsorize_series(
-                df[metric]
-            )
-        )
-
-        df[percentile_column] = (
-            df[winsor_column]
-            .rank(
-                pct=True,
-                method="average",
-            )
-        )
-
-        score_columns.append(
-            percentile_column
-        )
-
-    # -------------------------------------------------------------------------
-    # LOWER IS BETTER
-    # -------------------------------------------------------------------------
-
-    for metric in lower:
-
-        winsor_column = (
-            f"{metric}_winsor"
-        )
-
-        percentile_column = (
-            f"{metric}_percentile"
-        )
-
-        df[winsor_column] = (
-            winsorize_series(
-                df[metric]
-            )
-        )
-
-        raw_percentile = (
-            df[winsor_column]
-            .rank(
-                pct=True,
-                method="average",
-            )
-        )
-
-        # Menor valor fundamental = maior score.
-
-        df[percentile_column] = (
-            1.0
-            - raw_percentile
-            + (1.0 / raw_percentile.count())
-            if raw_percentile.count() > 0
-            else raw_percentile
-        )
-
-        score_columns.append(
-            percentile_column
-        )
-
-    # -------------------------------------------------------------------------
-    # QUANTIDADE DE COMPONENTES VÁLIDOS
-    # -------------------------------------------------------------------------
-
-    component_count_column = (
-        f"{factor_name.lower()}_components"
-    )
-
-    score_column = (
-        f"{factor_name.lower()}_score"
-    )
-
-    df[
-        component_count_column
-    ] = (
-        df[
-            score_columns
-        ]
-        .notna()
-        .sum(
-            axis=1
-        )
-    )
-
-    # -------------------------------------------------------------------------
-    # MÉDIA DOS COMPONENTES VÁLIDOS
-    # -------------------------------------------------------------------------
-
-    df[
-        score_column
-    ] = (
-        df[
-            score_columns
-        ]
-        .mean(
-            axis=1,
-            skipna=True,
-        )
-    )
-
-    # -------------------------------------------------------------------------
-    # MÍNIMO DE COMPONENTES
-    # -------------------------------------------------------------------------
-
-    insufficient = (
-        df[
-            component_count_column
-        ]
-        < minimum_components
-    )
-
     df.loc[
-        insufficient,
+        df[
+            components_column
+        ]
+        <
+        minimum_components,
         score_column,
     ] = np.nan
-
-    df[
-        f"{factor_name.lower()}_eligible"
-    ] = (
-        ~insufficient
-        & df[
-            score_column
-        ].notna()
-    )
 
     return df
 
 
-# =============================================================================
-# RANKING
-# =============================================================================
+# ======================================================================================
+# 6. FINANCIAL STRENGTH
+# ======================================================================================
 
-def rank_factor(
-    scored: pd.DataFrame,
-    factor_name: str,
+def calculate_financial_strength_score(
+    theme_df: pd.DataFrame,
+) -> pd.DataFrame:
+
+    return calculate_factor_score(
+        theme_df=
+            theme_df,
+        factor_name=
+            ROBOTICS_FACTOR,
+    )
+
+
+# ======================================================================================
+# 7. GROWTH
+# ======================================================================================
+
+def calculate_growth_score(
+    theme_df: pd.DataFrame,
+) -> pd.DataFrame:
+
+    return calculate_factor_score(
+        theme_df=
+            theme_df,
+        factor_name=
+            QUANTUM_FACTOR,
+    )
+
+
+# ======================================================================================
+# 8. RANKING ROBOTICS
+# ======================================================================================
+
+def rank_robotics(
+    fundamentals: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Ordena empresas pelo score fundamental.
+    ROBOTICS:
+
+        Financial Strength
+            cash_assets ↑
+            debt_assets ↓
+            debt_equity ↓
+
+        Top 5
     """
 
-    factor_name = str(
-        factor_name
-    ).upper()
+    robotics = build_theme_universe(
+        fundamentals=
+            fundamentals,
+        ranking_theme=
+            ROBOTICS_THEME,
+    )
+
+    if robotics.empty:
+
+        raise RuntimeError(
+            "Universo ROBOTICS vazio."
+        )
+
+    scored = (
+        calculate_financial_strength_score(
+            robotics
+        )
+    )
 
     score_column = (
-        f"{factor_name.lower()}_score"
+        "financial_strength_score"
     )
 
-    eligible_column = (
-        f"{factor_name.lower()}_eligible"
-    )
-
-    if score_column not in scored.columns:
-        raise ValueError(
-            f"Score ausente: {score_column}"
-        )
-
-    df = scored.loc[
+    scored = (
         scored[
-            eligible_column
+            scored[
+                score_column
+            ].notna()
         ]
-    ].copy()
-
-    if df.empty:
-        raise RuntimeError(
-            f"Nenhuma empresa elegível "
-            f"para {factor_name}."
-        )
-
-    # Critério primário:
-    # maior score.
-    #
-    # Ticker serve apenas como desempate
-    # determinístico operacional.
-
-    df = (
-        df
         .sort_values(
-            by=[
+            [
                 score_column,
                 "ticker",
             ],
@@ -556,396 +573,426 @@ def rank_factor(
                 False,
                 True,
             ],
-            kind="mergesort",
         )
         .reset_index(
             drop=True
         )
     )
 
-    # position é sequencial.
-    # Isso evita reduzir o número selecionado
-    # quando existem empates de score.
+    if len(scored) < ROBOTICS_TOP_N:
 
-    df[
+        raise RuntimeError(
+            "ROBOTICS possui somente "
+            f"{len(scored)} empresas elegíveis. "
+            f"São necessárias pelo menos "
+            f"{ROBOTICS_TOP_N}."
+        )
+
+    scored[
         "fundamental_position"
-    ] = (
-        np.arange(
-            1,
-            len(df) + 1,
-        )
+    ] = np.arange(
+        1,
+        len(scored) + 1,
     )
 
-    # Rank estatístico preservado
-    # para auditoria de empates.
-
-    df[
+    scored[
         "fundamental_rank"
-    ] = (
-        df[
-            score_column
-        ]
-        .rank(
-            ascending=False,
-            method="min",
-        )
-        .astype(int)
-    )
-
-    return df
-
-
-# =============================================================================
-# SELEÇÃO DE UM TEMA
-# =============================================================================
-
-def select_theme(
-    snapshot: pd.DataFrame,
-    theme: str,
-) -> pd.DataFrame:
-    """
-    Executa a política fundamental congelada
-    de um tema.
-    """
-
-    theme = str(
-        theme
-    ).upper()
-
-    if theme not in THEME_POLICY:
-        raise ValueError(
-            f"Tema sem política: {theme}"
-        )
-
-    policy = THEME_POLICY[
-        theme
+    ] = scored[
+        "fundamental_position"
     ]
 
-    factor = str(
-        policy[
-            "factor"
-        ]
-    ).upper()
+    scored[
+        "fundamental_factor"
+    ] = ROBOTICS_FACTOR
 
-    top_n = int(
-        policy[
-            "top_n"
+    scored[
+        "fundamental_score"
+    ] = scored[
+        score_column
+    ]
+
+    scored[
+        "selected_fundamentally"
+    ] = (
+        scored[
+            "fundamental_position"
         ]
+        <=
+        ROBOTICS_TOP_N
     )
 
-    universe = (
-        build_theme_universe(
-            snapshot,
-            theme,
+    return scored
+
+
+# ======================================================================================
+# 9. RANKING QUANTUM
+# ======================================================================================
+
+def rank_quantum(
+    fundamentals: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    QUANTUM:
+
+        Growth
+            revenue_growth ↑
+            eps_growth ↑
+            operating_cash_flow_growth ↑
+
+        Top 2
+    """
+
+    quantum = build_theme_universe(
+        fundamentals=
+            fundamentals,
+        ranking_theme=
+            QUANTUM_THEME,
+    )
+
+    if quantum.empty:
+
+        raise RuntimeError(
+            "Universo QUANTUM vazio."
         )
+
+    scored = (
+        calculate_growth_score(
+            quantum
+        )
+    )
+
+    score_column = (
+        "growth_score"
     )
 
     scored = (
-        calculate_factor_score(
-            universe,
-            factor,
+        scored[
+            scored[
+                score_column
+            ].notna()
+        ]
+        .sort_values(
+            [
+                score_column,
+                "ticker",
+            ],
+            ascending=[
+                False,
+                True,
+            ],
+        )
+        .reset_index(
+            drop=True
         )
     )
 
-    ranked = (
-        rank_factor(
-            scored,
-            factor,
+    if len(scored) < QUANTUM_TOP_N:
+
+        raise RuntimeError(
+            "QUANTUM possui somente "
+            f"{len(scored)} empresas elegíveis. "
+            f"São necessárias pelo menos "
+            f"{QUANTUM_TOP_N}."
+        )
+
+    scored[
+        "fundamental_position"
+    ] = np.arange(
+        1,
+        len(scored) + 1,
+    )
+
+    scored[
+        "fundamental_rank"
+    ] = scored[
+        "fundamental_position"
+    ]
+
+    scored[
+        "fundamental_factor"
+    ] = QUANTUM_FACTOR
+
+    scored[
+        "fundamental_score"
+    ] = scored[
+        score_column
+    ]
+
+    scored[
+        "selected_fundamentally"
+    ] = (
+        scored[
+            "fundamental_position"
+        ]
+        <=
+        QUANTUM_TOP_N
+    )
+
+    return scored
+
+
+# ======================================================================================
+# 10. SELEÇÃO FUNDAMENTAL FINAL
+# ======================================================================================
+
+def select_fundamental_portfolio(
+    fundamentals: pd.DataFrame,
+) -> pd.DataFrame:
+
+    robotics_ranking = (
+        rank_robotics(
+            fundamentals
         )
     )
 
-    selected = (
-        ranked
-        .head(
-            top_n
+    quantum_ranking = (
+        rank_quantum(
+            fundamentals
         )
+    )
+
+    robotics_selected = (
+        robotics_ranking[
+            robotics_ranking[
+                "selected_fundamentally"
+            ]
+        ]
         .copy()
     )
 
-    selected[
-        "fundamental_factor"
-    ] = factor
-
-    selected[
-        "fundamental_score"
-    ] = selected[
-        f"{factor.lower()}_score"
-    ]
-
-    selected[
-        "selected_fundamentally"
-    ] = True
-
-    selected[
-        "top_n_policy"
-    ] = top_n
-
-    selected[
-        "fundamental_evidence"
-    ] = policy.get(
-        "evidence"
-    )
-
-    if len(selected) > top_n:
-        raise AssertionError(
-            f"{theme}: seleção excedeu Top {top_n}."
-        )
-
-    return selected
-
-
-# =============================================================================
-# ROBOTICS
-# =============================================================================
-
-def select_robotics(
-    snapshot: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Financial Strength -> Top 5.
-    """
-
-    result = select_theme(
-        snapshot,
-        "ROBOTICS",
-    )
-
-    if (
-        result[
-            "fundamental_factor"
+    quantum_selected = (
+        quantum_ranking[
+            quantum_ranking[
+                "selected_fundamentally"
+            ]
         ]
-        != "FINANCIAL_STRENGTH"
-    ).any():
-        raise AssertionError(
-            "Robotics utilizou fator incorreto."
-        )
-
-    if len(result) > 5:
-        raise AssertionError(
-            "Robotics excedeu Top 5."
-        )
-
-    return result
-
-
-# =============================================================================
-# QUANTUM
-# =============================================================================
-
-def select_quantum(
-    snapshot: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Growth -> Top 2.
-    """
-
-    result = select_theme(
-        snapshot,
-        "QUANTUM",
+        .copy()
     )
 
-    if (
-        result[
-            "fundamental_factor"
-        ]
-        != "GROWTH"
-    ).any():
-        raise AssertionError(
-            "Quantum utilizou fator incorreto."
-        )
-
-    if len(result) > 2:
-        raise AssertionError(
-            "Quantum excedeu Top 2."
-        )
-
-    return result
-
-
-# =============================================================================
-# SELEÇÃO COMPLETA
-# =============================================================================
-
-def select_fundamental_portfolio(
-    snapshot: pd.DataFrame,
-) -> Dict[str, pd.DataFrame]:
-    """
-    Executa os dois motores fundamentais.
-
-    ROBOTICS:
-        Financial Strength -> Top 5
-
-    QUANTUM:
-        Growth -> Top 2
-    """
-
-    validate_frozen_policy()
-
-    validate_snapshot(
-        snapshot
-    )
-
-    normalized = (
-        normalize_numeric_columns(
-            snapshot
-        )
-    )
-
-    robotics = (
-        select_robotics(
-            normalized
-        )
-    )
-
-    quantum = (
-        select_quantum(
-            normalized
-        )
-    )
-
-    validate_final_selection(
-        robotics=robotics,
-        quantum=quantum,
-    )
-
-    return {
-        "ROBOTICS":
-            robotics,
-
-        "QUANTUM":
-            quantum,
-    }
-
-
-# =============================================================================
-# AUDITORIA FINAL
-# =============================================================================
-
-def validate_final_selection(
-    robotics: pd.DataFrame,
-    quantum: pd.DataFrame,
-) -> bool:
-    """
-    Garante que a política congelada não sofreu drift.
-    """
-
-    if len(robotics) > 5:
-        raise AssertionError(
-            "Mais de 5 empresas selecionadas "
-            "em Robotics."
-        )
-
-    if len(quantum) > 2:
-        raise AssertionError(
-            "Mais de 2 empresas selecionadas "
-            "em Quantum."
-        )
-
-    if not robotics.empty:
-
-        if (
-            robotics[
-                "ranking_theme"
-            ]
-            != "ROBOTICS"
-        ).any():
-
-            raise AssertionError(
-                "Empresa não-Robotics "
-                "entrou no ranking Robotics."
-            )
-
-        if (
-            robotics[
-                "fundamental_factor"
-            ]
-            != "FINANCIAL_STRENGTH"
-        ).any():
-
-            raise AssertionError(
-                "Fator Robotics foi alterado."
-            )
-
-    if not quantum.empty:
-
-        if (
-            quantum[
-                "ranking_theme"
-            ]
-            != "QUANTUM"
-        ).any():
-
-            raise AssertionError(
-                "Empresa não-Quantum "
-                "entrou no ranking Quantum."
-            )
-
-        if (
-            quantum[
-                "fundamental_factor"
-            ]
-            != "GROWTH"
-        ).any():
-
-            raise AssertionError(
-                "Fator Quantum foi alterado."
-            )
-
-    return True
-
-
-# =============================================================================
-# CONSOLIDAÇÃO
-# =============================================================================
-
-def consolidate_selection(
-    selections: Dict[str, pd.DataFrame],
-) -> pd.DataFrame:
-    """
-    Consolida Robotics e Quantum mantendo
-    as duas participações de uma empresa BOTH.
-
-    Exemplo:
-        NVDA pode aparecer uma vez como Robotics
-        e uma vez como Quantum.
-
-    A deduplicação da empresa final ocorrerá
-    posteriormente no portfolio_engine.
-    """
-
-    frames = []
-
-    for theme in (
-        "ROBOTICS",
-        "QUANTUM",
-    ):
-
-        df = selections.get(
-            theme
-        )
-
-        if (
-            df is None
-            or df.empty
-        ):
-            continue
-
-        frames.append(
-            df.copy()
-        )
-
-    if not frames:
-        raise RuntimeError(
-            "Nenhuma seleção fundamental produzida."
-        )
-
-    result = pd.concat(
-        frames,
+    final_selection = pd.concat(
+        [
+            robotics_selected,
+            quantum_selected,
+        ],
         ignore_index=True,
     )
 
-    result = (
-        result
+    return final_selection
+
+
+# ======================================================================================
+# 11. VALIDAÇÃO DA ARQUITETURA CONGELADA
+# ======================================================================================
+
+def validate_fundamental_selection(
+    selection: pd.DataFrame,
+) -> None:
+
+    if selection is None:
+        raise RuntimeError(
+            "Seleção fundamental inexistente."
+        )
+
+    if selection.empty:
+        raise RuntimeError(
+            "Seleção fundamental vazia."
+        )
+
+    required_columns = {
+        "ticker",
+        "ranking_theme",
+        "fundamental_position",
+        "fundamental_factor",
+        "fundamental_score",
+        "selected_fundamentally",
+    }
+
+    missing = (
+        required_columns
+        -
+        set(
+            selection.columns
+        )
+    )
+
+    if missing:
+
+        raise RuntimeError(
+            "Seleção fundamental sem colunas: "
+            f"{sorted(missing)}"
+        )
+
+    robotics = selection[
+        selection[
+            "ranking_theme"
+        ]
+        ==
+        ROBOTICS_THEME
+    ].copy()
+
+    quantum = selection[
+        selection[
+            "ranking_theme"
+        ]
+        ==
+        QUANTUM_THEME
+    ].copy()
+
+    # ------------------------------------------------------------------
+    # CONTAGEM
+    # ------------------------------------------------------------------
+
+    if len(robotics) != ROBOTICS_TOP_N:
+
+        raise RuntimeError(
+            "Arquitetura violada: "
+            f"ROBOTICS possui {len(robotics)} "
+            "empresas selecionadas; "
+            f"esperado = {ROBOTICS_TOP_N}."
+        )
+
+    if len(quantum) != QUANTUM_TOP_N:
+
+        raise RuntimeError(
+            "Arquitetura violada: "
+            f"QUANTUM possui {len(quantum)} "
+            "empresas selecionadas; "
+            f"esperado = {QUANTUM_TOP_N}."
+        )
+
+    # ------------------------------------------------------------------
+    # FATOR
+    # ------------------------------------------------------------------
+
+    if not (
+        robotics[
+            "fundamental_factor"
+        ]
+        ==
+        ROBOTICS_FACTOR
+    ).all():
+
+        raise RuntimeError(
+            "ROBOTICS não está utilizando "
+            "Financial Strength."
+        )
+
+    if not (
+        quantum[
+            "fundamental_factor"
+        ]
+        ==
+        QUANTUM_FACTOR
+    ).all():
+
+        raise RuntimeError(
+            "QUANTUM não está utilizando "
+            "Growth."
+        )
+
+    # ------------------------------------------------------------------
+    # POSIÇÕES
+    # ------------------------------------------------------------------
+
+    robotics_positions = (
+        robotics[
+            "fundamental_position"
+        ]
+        .astype(int)
+        .tolist()
+    )
+
+    quantum_positions = (
+        quantum[
+            "fundamental_position"
+        ]
+        .astype(int)
+        .tolist()
+    )
+
+    if sorted(
+        robotics_positions
+    ) != list(
+        range(
+            1,
+            ROBOTICS_TOP_N + 1,
+        )
+    ):
+
+        raise RuntimeError(
+            "Posições fundamentais de "
+            "ROBOTICS inválidas."
+        )
+
+    if sorted(
+        quantum_positions
+    ) != list(
+        range(
+            1,
+            QUANTUM_TOP_N + 1,
+        )
+    ):
+
+        raise RuntimeError(
+            "Posições fundamentais de "
+            "QUANTUM inválidas."
+        )
+
+    # ------------------------------------------------------------------
+    # SELEÇÃO
+    # ------------------------------------------------------------------
+
+    if not robotics[
+        "selected_fundamentally"
+    ].all():
+
+        raise RuntimeError(
+            "ROBOTICS contém empresa "
+            "não selecionada fundamentalmente."
+        )
+
+    if not quantum[
+        "selected_fundamentally"
+    ].all():
+
+        raise RuntimeError(
+            "QUANTUM contém empresa "
+            "não selecionada fundamentalmente."
+        )
+
+
+# ======================================================================================
+# 12. AUDITORIA
+# ======================================================================================
+
+def build_fundamental_audit(
+    ranking: pd.DataFrame,
+) -> pd.DataFrame:
+
+    if ranking is None or ranking.empty:
+
+        return pd.DataFrame()
+
+    columns = [
+        "ticker",
+        "ranking_theme",
+        "fundamental_position",
+        "fundamental_factor",
+        "fundamental_score",
+        "selected_fundamentally",
+    ]
+
+    existing = [
+        column
+        for column in columns
+        if column in ranking.columns
+    ]
+
+    return (
+        ranking[
+            existing
+        ]
+        .copy()
         .sort_values(
             [
                 "ranking_theme",
@@ -957,71 +1004,157 @@ def consolidate_selection(
         )
     )
 
-    return result
 
+# ======================================================================================
+# 13. FACHADA DO ENGINE
+# ======================================================================================
 
-# =============================================================================
-# RELATÓRIO DE CONSOLE
-# =============================================================================
+class FundamentalSelection:
 
-def print_selection(
-    selections: Dict[str, pd.DataFrame],
-) -> None:
-    """
-    Exibe seleção fundamental atual.
-    """
-
-    print(
-        "=" * 110
-    )
-
-    print(
-        "ROBOTICS_QUANTUM_SP500 — "
-        "SELEÇÃO FUNDAMENTAL"
-    )
-
-    print(
-        "=" * 110
-    )
-
-    for theme in (
-        "ROBOTICS",
-        "QUANTUM",
+    @staticmethod
+    def calculate(
+        fundamentals: pd.DataFrame,
+        return_full_ranking: bool = False,
     ):
 
-        df = selections[
-            theme
-        ]
+        # Validação da política congelada, se disponível.
+        validate_frozen_policy()
 
-        print(
-            f"\n{theme}"
-        )
-
-        print(
-            "-" * 110
-        )
-
-        if df.empty:
-
-            print(
-                "Nenhuma empresa selecionada."
+        robotics_ranking = (
+            rank_robotics(
+                fundamentals
             )
+        )
 
-            continue
+        quantum_ranking = (
+            rank_quantum(
+                fundamentals
+            )
+        )
 
-        print(
-            df[
+        full_ranking = pd.concat(
+            [
+                robotics_ranking,
+                quantum_ranking,
+            ],
+            ignore_index=True,
+        )
+
+        selected = full_ranking[
+            full_ranking[
+                "selected_fundamentally"
+            ]
+        ].copy()
+
+        selected = (
+            selected
+            .sort_values(
                 [
+                    "ranking_theme",
                     "fundamental_position",
-                    "fundamental_rank",
-                    "ticker",
-                    "company",
-                    "theme",
-                    "fundamental_factor",
-                    "fundamental_score",
-                    "gics_sector",
                 ]
-            ].to_string(
-                index=False
+            )
+            .reset_index(
+                drop=True
             )
         )
+
+        validate_fundamental_selection(
+            selected
+        )
+
+        if return_full_ranking:
+
+            return (
+                selected,
+                full_ranking,
+            )
+
+        return selected
+
+
+# ======================================================================================
+# 14. TESTE DIRETO
+# ======================================================================================
+
+if __name__ == "__main__":
+
+    print(
+        "=" * 100
+    )
+
+    print(
+        "ROBOTICS_QUANTUM_SP500 "
+        "— FUNDAMENTAL SELECTION"
+    )
+
+    print(
+        "=" * 100
+    )
+
+    print(
+        "\nArquitetura congelada:"
+    )
+
+    print(
+        "  ROBOTICS"
+    )
+
+    print(
+        "    Financial Strength"
+    )
+
+    print(
+        "    cash_assets ↑"
+    )
+
+    print(
+        "    debt_assets ↓"
+    )
+
+    print(
+        "    debt_equity ↓"
+    )
+
+    print(
+        "    Top 5"
+    )
+
+    print(
+        "\n  QUANTUM"
+    )
+
+    print(
+        "    Growth"
+    )
+
+    print(
+        "    revenue_growth ↑"
+    )
+
+    print(
+        "    eps_growth ↑"
+    )
+
+    print(
+        "    operating_cash_flow_growth ↑"
+    )
+
+    print(
+        "    Top 2"
+    )
+
+    print(
+        "\n  BOTH participa "
+        "independentemente dos dois rankings."
+    )
+
+    print(
+        "\n  Timing não participa "
+        "da seleção fundamental."
+    )
+
+    print(
+        "\nFundamental Selection "
+        "carregado com sucesso."
+    )
